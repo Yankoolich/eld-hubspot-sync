@@ -6,10 +6,10 @@ import os
 # config
 SPARKLE_API_KEY = os.getenv("SPARKLE_API_KEY")
 HUBSPOT_API_TOKEN = os.getenv("HUBSPOT_API_TOKEN")
-CUSTOM_OBJECT_NAME = "eld_device"
+CUSTOM_OBJECT_NAME = "eld_sync"
 CUSTOM_OBJECT_LABELS = {
-    "singular": "ELD Device",
-    "plural": "ELD Devices"
+    "singular": "ELD Sync",
+    "plural": "ELD Syncs"
 }
 
 sparkle_headers = {
