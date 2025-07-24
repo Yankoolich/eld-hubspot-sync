@@ -25,4 +25,5 @@ jobs:
       - name: Run ELD sync script
         env:
           HUBSPOT_API_TOKEN: ${{ secrets.HUBSPOT_API_TOKEN }}
+          SPARKLE_API_KEY: ${{ secrets.SPARKLE_API_KEY }}
         run: python src/eld_sync_script.py
