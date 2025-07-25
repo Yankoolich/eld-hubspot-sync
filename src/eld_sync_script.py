@@ -161,8 +161,33 @@ def transform_data(combined_data):
 
 # to hubSpot
 def push_to_hubspot(object_type_id, transformed_data):
-    for record in transformed_data:
+    def get_record_id_by_unit_id(unit_id):
+        search_url = f"https://api.hubapi.com/crm/v3/objects/{object_type_id}/search"
+        payload = {
+            "filterGroups": [
+                {
+                    "filters": [
+                        {
+                            "propertyName": "unit_id",
+                            "operator": "EQ",
+                            "value": unit_id
+                        }
+                    ]
+                }
+            ],
+            "properties": ["unit_id"],
+            "limit": 1
+        }
 
+        res = requests.post(search_url, headers=hubspot_headers, json=payload)
+        if res.status_code == 200:
+            results = res.json().get("results", [])
+            if results:
+                return results[0]["id"]
+        return None
+
+    for record in transformed_data:
+        record_id = get_record_id_by_unit_id(record["unit_id"])
         payload = {
             "properties": {
                 "unit_id": record["unit_id"],
@@ -175,17 +200,20 @@ def push_to_hubspot(object_type_id, transformed_data):
                 "eld_status": record["eld_status"]
             }
         }
-        
-        res = requests.post(
-            f"https://api.hubapi.com/crm/v3/objects/{object_type_id}",
-            headers=hubspot_headers,
-            json=payload
-        )
-            
-        if res.status_code == 201:
-            print(f"✅ Uploaded ELD record: {record['unit_id']}")
+
+        if record_id:
+            url = f"https://api.hubapi.com/crm/v3/objects/{object_type_id}/{record_id}"
+            res = requests.patch(url, headers=hubspot_headers, json=payload)
+            action = "Updated"
         else:
-            print(f"❌ Failed to upload record: {record['unit_id']}")
+            url = f"https://api.hubapi.com/crm/v3/objects/{object_type_id}"
+            res = requests.post(url, headers=hubspot_headers, json=payload)
+            action = "Created"
+
+        if res.status_code in [200, 201]:
+            print(f"✅ {action} ELD record: {record['unit_id']}")
+        else:
+            print(f"❌ Failed to {action.lower()} record: {record['unit_id']}")
             print(res.text)
 
 # main
