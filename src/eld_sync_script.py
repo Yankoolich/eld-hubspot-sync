@@ -34,6 +34,7 @@ FIELD_MAP = {
     "mileage": "mileage",
     "eld_serial_no_": "eld_serial_no_",
     "eld_status": "eld_status",
+    "driver_id":"driver_id",
 }
 ALLOWED_PROPS = set(FIELD_MAP.values())
 # --------------------------------
@@ -176,7 +177,8 @@ def transform_data(combined_data):
             "mileage": location.get("odometer"),
             "last_sync__logs_": datetime.now().strftime("%d.%m.%Y %H:%M"),
             "eld_serial_no_": eld_serial_no,
-            "eld_status": eld_status
+            "eld_status": eld_status,
+            "driver_id": driver.get("id")
         })
     return flattened
 
@@ -215,7 +217,8 @@ def push_to_hubspot(object_type_id, transformed_data):
                 "mileage": record.get("mileage"),
                 "last_sync_logs": record.get("last_sync__logs_"),
                 "eld_serial_no": record.get("eld_serial_no_"),
-                "eld_status": record.get("eld_status")
+                "eld_status": record.get("eld_status"),
+                "driver_id":record.get("driver_id")
             }.items() if k in allowed_props and v is not None
         }
 
