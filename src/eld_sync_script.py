@@ -155,6 +155,7 @@ def fetch_sparkle_data():
         })
     return combined
 
+
 def transform_data(combined_data):
     flattened = []
     for entry in combined_data:
@@ -178,7 +179,8 @@ def transform_data(combined_data):
             "eld_status": eld_status
         })
     return flattened
-# to hubspot map
+
+
 def to_hubspot_properties(record):
     props = {}
     for src_key, dest_key in FIELD_MAP.items():
@@ -193,54 +195,69 @@ def to_hubspot_properties(record):
 
 
 def push_to_hubspot(object_type_id, transformed_data):
-    for record in transformed_data:
-        properties = to_hubspot_properties(record)
+    def get_allowed_properties(object_type_id, headers):
+        url = f"https://api.hubapi.com/crm/v3/schemas/{object_type_id}"
+        r = requests.get(url, headers=headers)
+        r.raise_for_status()
+        schema = r.json()
+        return {prop["name"] for prop in schema.get("properties", [])}
 
-        # 1) Search by unit_id
-        search_payload = {
+    allowed_props = get_allowed_properties(object_type_id, hubspot_headers)
+
+    for record in transformed_data:
+        # Filter out any fields that are not allowed
+        properties = {
+            k: v for k, v in {
+                "unit_id": record.get("unit_id"),
+                "driver_eld": record.get("driver__eld_"),
+                "location_eld": record.get("location__eld_"),
+                "engine_hours": record.get("engine_hours"),
+                "mileage": record.get("mileage"),
+                "last_sync_logs": record.get("last_sync__logs_"),
+                "eld_serial_no": record.get("eld_serial_no_"),
+                "eld_status": record.get("eld_status")
+            }.items() if k in allowed_props and v is not None
+        }
+
+        payload = { "properties": properties }
+
+        print("\n📦 Sending payload to HubSpot:")
+        # print(json.dumps(payload, indent=2))  # Debug: print the payload
+
+        # Try update first
+        query_url = f"https://api.hubapi.com/crm/v3/objects/{object_type_id}/search"
+        query_payload = {
             "filterGroups": [{
-                "filters": [
-                    {"propertyName": "unit_id", "operator": "EQ", "value": record["unit_id"]}
-                ]
+                "filters": [{
+                    "propertyName": "unit_id",
+                    "operator": "EQ",
+                    "value": record.get("unit_id")
+                }]
             }],
-            "properties": ["unit_id"],
+            "properties": list(allowed_props),
             "limit": 1
         }
-        search_res = requests.post(
-            f"https://api.hubapi.com/crm/v3/objects/{object_type_id}/search",
-            headers=hubspot_headers,
-            json=search_payload
-        )
 
-        if search_res.status_code != 200:
-            print(f"❌ Search failed for unit_id={record['unit_id']}: {search_res.status_code}")
-            print(search_res.text)
-            continue
+        search_response = requests.post(query_url, headers=hubspot_headers, json=query_payload)
+        if search_response.status_code == 200:
+            results = search_response.json().get("results", [])
+            if results:
+                existing_id = results[0]["id"]
+                update_url = f"https://api.hubapi.com/crm/v3/objects/{object_type_id}/{existing_id}"
+                update_response = requests.patch(update_url, headers=hubspot_headers, json=payload)
+                print(f"🔄 Updated record {record['unit_id']}, status: {update_response.status_code}")
+                print(update_response.text)
+                continue
 
-        results = search_res.json().get("results", [])
-
-        if results:
-            # 2) Update existing
-            object_id = results[0]["id"]
-            update_url = f"https://api.hubapi.com/crm/v3/objects/{object_type_id}/{object_id}"
-            res = requests.patch(update_url, headers=hubspot_headers, json={"properties": properties})
-            if res.status_code == 200:
-                print(f"🔁 Updated: {record['unit_id']}")
-            else:
-                print(f"❌ Update failed for {record['unit_id']}: {res.status_code}")
-                print(res.text)
+        # If not found, create new
+        create_url = f"https://api.hubapi.com/crm/v3/objects/{object_type_id}"
+        create_response = requests.post(create_url, headers=hubspot_headers, json=payload)
+        if create_response.status_code == 201:
+            print(f"✅ Created new record: {record['unit_id']}")
         else:
-            # 3) Create new
-            create_res = requests.post(
-                f"https://api.hubapi.com/crm/v3/objects/{object_type_id}",
-                headers=hubspot_headers,
-                json={"properties": properties}
-            )
-            if create_res.status_code == 201:
-                print(f"✅ Created: {record['unit_id']}")
-            else:
-                print(f"❌ Create failed for {record['unit_id']}: {create_res.status_code}")
-                print(create_res.text)
+            print(f"❌ Failed to create record: {record['unit_id']}")
+            print(create_response.text)
+
 
 
 
