@@ -155,14 +155,15 @@ def fetch_sparkle_data():
         })
     return combined
 
-# to hubSpot jsonFormat
 def transform_data(combined_data):
     flattened = []
     for entry in combined_data:
         vehicle_id = entry.get("vehicleId")
         driver = entry.get("driverProfile") or {}
         location = entry.get("vehicleLocation") or {}
-        eld = entry.get("eldDevice") or {}
+        eld = entry.get("eldDevice")  # Not defaulting to empty dict here
+
+        eld_status = eld.get("status") if eld else "Deactivated"
 
         flattened.append({
             "unit_id": vehicle_id,
@@ -171,8 +172,8 @@ def transform_data(combined_data):
             "engine_hours": location.get("engineHours"),
             "mileage": location.get("odometer"),
             "last_sync__logs_": datetime.now().strftime("%d.%m.%Y %H:%M"),
-            "eld_serial_no_": eld.get("serialNum"),
-            "eld_status": eld.get("status")
+            "eld_serial_no_": eld.get("serialNum") if eld else None,
+            "eld_status": eld_status
         })
     return flattened
 # to hubspot map
