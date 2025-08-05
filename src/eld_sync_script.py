@@ -159,32 +159,38 @@ def fetch_sparkle_data():
     return combined
 
 
+from datetime import datetime
+
 def transform_data(combined_data):
     flattened = []
     for entry in combined_data:
         vehicle_id = entry.get("vehicleId")
         driver = entry.get("driverProfile") or {}
         location = entry.get("vehicleLocation") or {}
-        eld = entry.get("eldDevice")  # Not defaulting to empty dict here
+        eld = entry.get("eldDevice") or {}   # normalize None -> {}
 
-        
-        eld_status_raw = eld.get("status")
-        #this because Fleet object is set only to Active/Deactived option
-        eld_status = eld_status_raw.capitalize() if eld_status_raw else "Deactivated"
-        eld_serial_no = eld.get("serialNum") if eld and eld.get("serialNum") else ""
+        # raw status from API (might be None or lowercased or other values)
+        raw_status = eld.get("status")
+
+        # HubSpot allows only: "Active", "Deactivated"
+        normalized = (raw_status or "").strip().lower()
+        if normalized == "active":
+            eld_status = "Active"
+        else:
+            eld_status = "Deactivated"
 
         flattened.append({
             "unit_id": vehicle_id,
-            "driver__eld_": driver.get("driverName"),
-            "location__eld_": location.get("geoCodedLocation"),
+            "driver__eld_": driver.get("driverName") or "",
+            "location__eld_": location.get("geoCodedLocation") or "",
             "engine_hours": location.get("engineHours"),
             "mileage": location.get("odometer"),
             "last_sync__logs_": datetime.now().strftime("%d.%m.%Y %H:%M"),
-            "eld_serial_no_": eld_serial_no,
-            "eld_status": eld_status,
-            "driver_id": driver.get("id")
+            "eld_serial_no_": eld.get("serialNum") or "",
+            "eld_status": eld_status
         })
     return flattened
+
 
 
 def to_hubspot_properties(record):
