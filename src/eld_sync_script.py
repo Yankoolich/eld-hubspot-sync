@@ -187,7 +187,8 @@ def transform_data(combined_data):
             "mileage": location.get("odometer"),
             "last_sync__logs_": datetime.now().strftime("%d.%m.%Y %H:%M"),
             "eld_serial_no_": eld.get("serialNum") or "",
-            "eld_status": eld_status
+            "eld_status": eld_status,
+            "driver_id": driver.get("id")
         })
     return flattened
 
