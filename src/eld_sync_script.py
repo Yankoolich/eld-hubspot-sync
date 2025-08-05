@@ -163,7 +163,9 @@ def transform_data(combined_data):
         location = entry.get("vehicleLocation") or {}
         eld = entry.get("eldDevice")  # Not defaulting to empty dict here
 
-        eld_status = eld.get("status") if eld else "Deactivated"
+        
+        eld_status = eld.get("status") if eld and eld.get("status") else "Deactivated"
+        eld_serial_no = eld.get("serialNum") if eld and eld.get("serialNum") else ""
 
         flattened.append({
             "unit_id": vehicle_id,
@@ -172,7 +174,7 @@ def transform_data(combined_data):
             "engine_hours": location.get("engineHours"),
             "mileage": location.get("odometer"),
             "last_sync__logs_": datetime.now().strftime("%d.%m.%Y %H:%M"),
-            "eld_serial_no_": eld.get("serialNum") if eld else None,
+            "eld_serial_no_": eld_serial_no,
             "eld_status": eld_status
         })
     return flattened
