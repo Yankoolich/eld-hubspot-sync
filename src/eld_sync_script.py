@@ -37,7 +37,8 @@ FIELD_MAP = {
     "driver_id":"driver_id",
 }
 ALLOWED_PROPS = set(FIELD_MAP.values())
-ALLOWED_PROPS.add("driver_id")
+if "driver_id" not in ALLOWED_PROPS:
+    ALLOWED_PROPS.add("driver_id")
 # --------------------------------
 
 
@@ -167,7 +168,9 @@ def transform_data(combined_data):
         eld = entry.get("eldDevice")  # Not defaulting to empty dict here
 
         
-        eld_status = eld.get("status") if eld and eld.get("status") else "Deactivated"
+        eld_status_raw = eld.get("status")
+        #this because Fleet object is set only to Active/Deactived option
+        eld_status = eld_status_raw.capitalize() if eld_status_raw else "Deactivated"
         eld_serial_no = eld.get("serialNum") if eld and eld.get("serialNum") else ""
 
         flattened.append({
