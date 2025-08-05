@@ -37,6 +37,7 @@ FIELD_MAP = {
     "driver_id":"driver_id",
 }
 ALLOWED_PROPS = set(FIELD_MAP.values())
+ALLOWED_PROPS.add("driver_id")
 # --------------------------------
 
 
