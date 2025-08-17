@@ -1,3 +1,4 @@
+import json
 import requests
 from datetime import datetime
 import os
@@ -26,6 +27,16 @@ STATUS_MAP = {
     "onHold": "Deactivated",
     "replaced": "Deactivated",
 }
+FUEL_TYPE_MAP = {
+    "diesel": "Diesel",
+    "gasoline": "Gasoline",
+    "compressed natural gas (cng)": "Compressed Natural Gas (CNG)",
+    "liquefied natural gas (lng)": "Liquefied Natural Gas (LNG)",
+    "battery electric": "Battery Electric",
+    "hybrid": "Hybrid",
+    "hydrogen fuel cell": "Hydrogen Fuel Cell",
+    "propane (lpg)": "Propane (LPG)",
+}
 FIELD_MAP = {
     "unit_id": "unit_id",
     "driver__eld_": "driver__eld_",
@@ -34,65 +45,21 @@ FIELD_MAP = {
     "mileage": "mileage",
     "eld_serial_no_": "eld_serial_no_",
     "eld_status": "eld_status",
-    "driver_id":"driver_id",
+    "driver_id": "driver_id",
+    "fuelType": "fuel_type",
+    "active": "active"
 }
 ALLOWED_PROPS = set(FIELD_MAP.values())
 if "driver_id" not in ALLOWED_PROPS:
     ALLOWED_PROPS.add("driver_id")
 # --------------------------------
 
-
-# # get or create hubspot custom object
-# def get_or_create_custom_object():
-#     # Step 1: Try to fetch existing custom schemas
-#     schemas_url = "https://api.hubapi.com/crm/v3/schemas"
-#     response = requests.get(schemas_url, headers=hubspot_headers)
-
-#     if response.status_code != 200:
-#         print(f"❌ Failed to fetch schemas: {response.status_code}")
-#         print(response.text)
-#         return None
-
-#     for schema in response.json().get("results", []):
-#         if schema.get("name") == CUSTOM_OBJECT_NAME:
-#             print(f"✅ Found existing custom object: {CUSTOM_OBJECT_NAME}")
-#             return schema["objectTypeId"]
-
-#     # Step 2: If not found, create it
-#     print(f"ℹ️ Custom object '{CUSTOM_OBJECT_NAME}' not found. Creating...")
-#     payload = {
-#         "name": CUSTOM_OBJECT_NAME,
-#         "labels": CUSTOM_OBJECT_LABELS,
-#         "primaryDisplayProperty": "unit_id",
-#         "requiredProperties": ["unit_id"],
-#         "properties": [
-#             { "name": "unit_id", "label": "Unit ID", "type": "string", "fieldType": "text" },
-#             { "name": "driver_eld", "label": "Driver", "type": "string", "fieldType": "text" },
-#             { "name": "location_eld", "label": "Location", "type": "string", "fieldType": "text" },
-#             { "name": "engine_hours", "label": "Engine Hours", "type": "number", "fieldType": "number" },
-#             { "name": "mileage", "label": "Mileage", "type": "number", "fieldType": "number" },
-#             { "name": "last_sync_logs", "label": "Last Sync", "type": "string", "fieldType": "text" },
-#             { "name": "eld_serial_no", "label": "Serial Number", "type": "string", "fieldType": "text" },
-#             { "name": "eld_status", "label": "Status", "type": "string", "fieldType": "text" }
-#         ]
-#     }
-
-#     create_response = requests.post(schemas_url, headers=hubspot_headers, json=payload)
-
-#     if create_response.status_code == 201:
-#         object_type_id = create_response.json()["objectTypeId"]
-#         print(f"✅ Created custom object: {object_type_id}")
-#         return object_type_id
-#     else:
-#         print(f"❌ Failed to create custom object: {create_response.status_code}")
-#         print(create_response.text)
-#         return None
-
 # fetch sparkel data
 def fetch_sparkle_data():
     driversEndpoint = 'https://web.sparkleeld.us/api/v0/driverProfiles'
     vehicleLocationEndpoint = 'https://web.sparkleeld.us/api/v0/locations'
     eldDevicesEndpoint = 'https://web.sparkleeld.us/api/v0/devices/eld'
+    vehicleByIdEndpoint = 'https://web.sparkleeld.us/api/v0/vehicle/'  # base URL
 
     # 1. Drivers
     drivers_dict = {}
@@ -120,7 +87,7 @@ def fetch_sparkle_data():
     else:
         print("❌ Locations fetch failed.")
 
-    # 3. ELD devices (across all statuses)
+    # 3. ELD devices
     eld_devices_dict = {}
     statuses = ['active', 'deactivated', 'onHold', 'replaced']
     for status in statuses:
@@ -146,7 +113,26 @@ def fetch_sparkle_data():
                 break
             page += 1
 
-    # Merge data
+    # 4. Vehicle details (nested 'data' field fix)
+    vehicle_detail_dict = {}
+    for v in vehicle_locations_dict.values():
+        vehicle_id = v.get("vehicleId")
+        internal_id = v.get("id")
+        if not internal_id:
+            continue
+        url = f"{vehicleByIdEndpoint}{internal_id}"
+        r = requests.get(url, headers=sparkle_headers)
+        if r.status_code == 200:
+            response_data = r.json()
+            vehicle_data = response_data.get("data")
+            if vehicle_data:
+                vehicle_detail_dict[vehicle_id] = vehicle_data
+            else:
+                print(f"⚠️ Vehicle details missing 'data' for id={internal_id}, response: {response_data}")
+        else:
+            print(f"⚠️ Vehicle details fetch failed for id={internal_id}, status: {r.status_code}")
+
+    # Merge all sources
     all_ids = set(drivers_dict.keys()) | set(vehicle_locations_dict.keys()) | set(eld_devices_dict.keys())
     combined = []
     for vid in all_ids:
@@ -154,9 +140,12 @@ def fetch_sparkle_data():
             "vehicleId": vid,
             "driverProfile": drivers_dict.get(vid),
             "vehicleLocation": vehicle_locations_dict.get(vid),
-            "eldDevice": eld_devices_dict.get(vid)
+            "eldDevice": eld_devices_dict.get(vid),
+            "vehicleDetails": vehicle_detail_dict.get(vid),
         })
+
     return combined
+
 
 
 from datetime import datetime
@@ -167,17 +156,20 @@ def transform_data(combined_data):
         vehicle_id = entry.get("vehicleId")
         driver = entry.get("driverProfile") or {}
         location = entry.get("vehicleLocation") or {}
-        eld = entry.get("eldDevice") or {}   # normalize None -> {}
+        eld = entry.get("eldDevice") or {}
+        vehicle_details = entry.get("vehicleDetails") or {}
 
-        # raw status from API (might be None or lowercased or other values)
+        # Normalize and map ELD status
         raw_status = eld.get("status")
+        normalized_status = (raw_status or "").strip().lower()
+        eld_status = "Active" if normalized_status == "active" else "Deactivated"
 
-        # HubSpot allows only: "Active", "Deactivated"
-        normalized = (raw_status or "").strip().lower()
-        if normalized == "active":
-            eld_status = "Active"
-        else:
-            eld_status = "Deactivated"
+        # Normalize and map fuel type
+        raw_fuel_type = (vehicle_details.get("fuelType") or "").strip().lower()
+        fuel_type_mapped = next(
+            (v for k, v in FUEL_TYPE_MAP.items() if k.lower() == raw_fuel_type),
+            "Other"
+        )
 
         flattened.append({
             "unit_id": vehicle_id,
@@ -188,10 +180,12 @@ def transform_data(combined_data):
             "last_sync__logs_": datetime.now().strftime("%d.%m.%Y %H:%M"),
             "eld_serial_no_": eld.get("serialNum") or "",
             "eld_status": eld_status,
-            "driver_id": driver.get("id")
+            "driver_id": driver.get("id"),
+            "vin": vehicle_details.get("vin") or "",
+            "fuelType": fuel_type_mapped,
+            "active": vehicle_details.get("active") if vehicle_details.get("active") is not None else False,
         })
     return flattened
-
 
 
 def to_hubspot_properties(record):
@@ -200,9 +194,20 @@ def to_hubspot_properties(record):
         if dest_key not in ALLOWED_PROPS:
             continue
         val = record.get(src_key)
+
+        # Normalize eld_status
         if src_key == "eld_status" and isinstance(val, str):
             val = STATUS_MAP.get(val.strip(), None)
+
+        # Handle fuelType: skip if maps to "Other"
+        elif src_key == "fuelType" and isinstance(val, str):
+            fuel_type_mapped = FUEL_TYPE_MAP.get(val.strip().lower(), "Other")
+            if fuel_type_mapped != "Other":
+                props[dest_key] = fuel_type_mapped
+            continue  # Skip adding raw value
+
         props[dest_key] = val
+
     return props
 
 
@@ -229,7 +234,10 @@ def push_to_hubspot(object_type_id, transformed_data):
                 "last_sync_logs": record.get("last_sync__logs_"),
                 "eld_serial_no": record.get("eld_serial_no_"),
                 "eld_status": record.get("eld_status"),
-                "driver_id":record.get("driver_id")
+                "driver_id":record.get("driver_id"),
+                "vin":record.get("vin"),
+                "fuel_type":record.get("fuelType"),
+                "active":record.get("active"),
             }.items() if k in allowed_props and v is not None
         }
 
@@ -277,5 +285,12 @@ def push_to_hubspot(object_type_id, transformed_data):
 
 # main
 combined_data = fetch_sparkle_data()
+# for entry in combined_data[:5]:
+#     print("vehicleId:", entry['vehicleId'])
+#     print("vehicleDetails:", json.dumps(entry.get("vehicleDetails", {}), indent=2))
 transformed_data = transform_data(combined_data)
+
+# with open("cijasi.json", "w", encoding="utf-8") as f:
+#     json.dump(transformed_data, f, indent=2, ensure_ascii=False)
+# print("✅ Preview saved to cijasi.json")
 push_to_hubspot(CUSTOM_OBJECT_ID, transformed_data)
