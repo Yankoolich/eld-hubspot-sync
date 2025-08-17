@@ -163,14 +163,9 @@ def transform_data(combined_data):
         raw_status = eld.get("status")
         normalized_status = (raw_status or "").strip().lower()
         eld_status = "Active" if normalized_status == "active" else "Deactivated"
-
-        # Normalize and map fuel type
-        raw_fuel_type = (vehicle_details.get("fuelType") or "").strip().lower()
-        fuel_type_mapped = next(
-            (v for k, v in FUEL_TYPE_MAP.items() if k.lower() == raw_fuel_type),
-            "Other"
-        )
-
+        active_flag = vehicle_details.get("active")
+        if active_flag is None:
+            active_flag = False
         flattened.append({
             "unit_id": vehicle_id,
             "driver__eld_": driver.get("driverName") or "",
@@ -182,8 +177,8 @@ def transform_data(combined_data):
             "eld_status": eld_status,
             "driver_id": driver.get("id"),
             "vin": vehicle_details.get("vin") or "",
-            "fuelType": fuel_type_mapped,
-            "active": vehicle_details.get("active") if vehicle_details.get("active") is not None else False,
+            "fuelType": vehicle_details.get("fuelType") or "",
+            "active": active_flag,
         })
     return flattened
 
@@ -199,13 +194,18 @@ def to_hubspot_properties(record):
         if src_key == "eld_status" and isinstance(val, str):
             val = STATUS_MAP.get(val.strip(), None)
 
-        # Handle fuelType: skip if maps to "Other"
+        # Normalize fuelType
         elif src_key == "fuelType" and isinstance(val, str):
-            fuel_type_mapped = FUEL_TYPE_MAP.get(val.strip().lower(), "Other")
-            if fuel_type_mapped != "Other":
-                props[dest_key] = fuel_type_mapped
-            continue  # Skip adding raw value
+            raw_fuel_type = val.strip().lower()
+            fuel_type_mapped = next(
+                (v for k, v in FUEL_TYPE_MAP.items() if k.lower() == raw_fuel_type),
+                None  # Do NOT send "Other"
+            )
+            if fuel_type_mapped:
+                props["fuel_type"] = fuel_type_mapped
+            continue  # Already added above
 
+        # Default case
         props[dest_key] = val
 
     return props
