@@ -198,12 +198,12 @@ def to_hubspot_properties(record):
         elif src_key == "fuelType" and isinstance(val, str):
             raw_fuel_type = val.strip().lower()
             fuel_type_mapped = next(
-                (v for k, v in FUEL_TYPE_MAP.items() if k.lower() == raw_fuel_type),
-                None  # Do NOT send "Other"
-            )
-            if fuel_type_mapped:
-                props["fuel_type"] = fuel_type_mapped
-            continue  # Already added above
+        (v for k, v in FUEL_TYPE_MAP.items() if k.lower() == raw_fuel_type),
+        None  # DO NOT send "Other", skip if no match
+    )
+        if fuel_type_mapped:
+            props["fuel_type"] = fuel_type_mapped
+            continue
 
         # Default case
         props[dest_key] = val
