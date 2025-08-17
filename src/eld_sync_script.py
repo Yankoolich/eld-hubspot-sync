@@ -223,16 +223,22 @@ def push_to_hubspot(object_type_id, transformed_data):
         return {prop["name"] for prop in schema.get("properties", [])}
 
     allowed_props = get_allowed_properties(object_type_id, hubspot_headers)
-    
+
     for record in transformed_data:
-        # Filter out any fields that are not allowed
+        # Map and normalize fuel type
         fuel_type_raw = record.get("fuelType")
         fuel_type_mapped = None
         if isinstance(fuel_type_raw, str):
-         fuel_type_mapped = next(
-        (v for k, v in FUEL_TYPE_MAP.items() if k.lower() == fuel_type_raw.strip().lower()),
-        None
-        )
+            fuel_type_mapped = next(
+                (v for k, v in FUEL_TYPE_MAP.items() if k.lower() == fuel_type_raw.strip().lower()),
+                None
+            )
+
+        # Normalize and map ELD status
+        raw_status = record.get("eld_status")
+        eld_status_mapped = STATUS_MAP.get((raw_status or "").strip().lower(), "Deactivated")
+
+        # Assemble HubSpot properties
         properties = {
             k: v for k, v in {
                 "unit_id": record.get("unit_id"),
@@ -242,18 +248,18 @@ def push_to_hubspot(object_type_id, transformed_data):
                 "mileage": record.get("mileage"),
                 "last_sync_logs": record.get("last_sync__logs_"),
                 "eld_serial_no": record.get("eld_serial_no_"),
-                "eld_status": record.get("eld_status"),
-                "driver_id":record.get("driver_id"),
-                "vin":record.get("vin"),
-                "active":record.get("active"),
+                "eld_status": eld_status_mapped,
+                "driver_id": record.get("driver_id"),
+                "vin": record.get("vin"),
+                "active": record.get("active"),
                 **({"fuel_type": fuel_type_mapped} if fuel_type_mapped else {})
             }.items() if k in allowed_props and v is not None
         }
 
-        payload = { "properties": properties }
+        payload = {"properties": properties}
 
         print("\n📦 Sending payload to HubSpot:")
-        # print(json.dumps(payload, indent=2))  # Debug: print the payload
+        # print(json.dumps(payload, indent=2))  # Uncomment for full debug
 
         # Try update first
         query_url = f"https://api.hubapi.com/crm/v3/objects/{object_type_id}/search"
@@ -288,7 +294,6 @@ def push_to_hubspot(object_type_id, transformed_data):
         else:
             print(f"❌ Failed to create record: {record['unit_id']}")
             print(create_response.text)
-
 
 
 
