@@ -223,9 +223,16 @@ def push_to_hubspot(object_type_id, transformed_data):
         return {prop["name"] for prop in schema.get("properties", [])}
 
     allowed_props = get_allowed_properties(object_type_id, hubspot_headers)
-
+    
     for record in transformed_data:
         # Filter out any fields that are not allowed
+        fuel_type_raw = record.get("fuelType")
+        fuel_type_mapped = None
+        if isinstance(fuel_type_raw, str):
+         fuel_type_mapped = next(
+        (v for k, v in FUEL_TYPE_MAP.items() if k.lower() == fuel_type_raw.strip().lower()),
+        None
+        )
         properties = {
             k: v for k, v in {
                 "unit_id": record.get("unit_id"),
@@ -238,8 +245,8 @@ def push_to_hubspot(object_type_id, transformed_data):
                 "eld_status": record.get("eld_status"),
                 "driver_id":record.get("driver_id"),
                 "vin":record.get("vin"),
-                "fuel_type":record.get("fuelType"),
                 "active":record.get("active"),
+                **({"fuel_type": fuel_type_mapped} if fuel_type_mapped else {})
             }.items() if k in allowed_props and v is not None
         }
 
