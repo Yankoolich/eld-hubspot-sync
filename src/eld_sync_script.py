@@ -185,30 +185,32 @@ def transform_data(combined_data):
 
 def to_hubspot_properties(record):
     props = {}
+
     for src_key, dest_key in FIELD_MAP.items():
         if dest_key not in ALLOWED_PROPS:
             continue
+
         val = record.get(src_key)
 
-        # Normalize eld_status
+        # Map eld_status
         if src_key == "eld_status" and isinstance(val, str):
             val = STATUS_MAP.get(val.strip(), None)
 
-        # Normalize fuelType
+        # Map fuelType
         elif src_key == "fuelType" and isinstance(val, str):
             raw_fuel_type = val.strip().lower()
             fuel_type_mapped = next(
-        (v for k, v in FUEL_TYPE_MAP.items() if k.lower() == raw_fuel_type),
-        None  # DO NOT send "Other", skip if no match
-    )
-        if fuel_type_mapped:
-            props["fuel_type"] = fuel_type_mapped
-            continue
+                (v for k, v in FUEL_TYPE_MAP.items() if k.lower() == raw_fuel_type),
+                None  # Do not send anything if it's not recognized
+            )
+            if fuel_type_mapped:
+                props["fuel_type"] = fuel_type_mapped
+            continue  # skip default assignment for fuelType
 
-        # Default case
         props[dest_key] = val
 
     return props
+
 
 
 
