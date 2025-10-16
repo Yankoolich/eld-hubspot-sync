@@ -298,6 +298,7 @@ def push_to_hubspot(object_type_id, transformed_data):
 
 
 # main
+# add
 combined_data = fetch_sparkle_data()
 # for entry in combined_data[:5]:
 #     print("vehicleId:", entry['vehicleId'])
