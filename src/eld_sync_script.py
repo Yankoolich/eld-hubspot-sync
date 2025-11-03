@@ -214,7 +214,90 @@ def to_hubspot_properties(record):
 
 
 
+# def push_to_hubspot(object_type_id, transformed_data):
+#     def get_allowed_properties(object_type_id, headers):
+#         url = f"https://api.hubapi.com/crm/v3/schemas/{object_type_id}"
+#         r = requests.get(url, headers=headers)
+#         r.raise_for_status()
+#         schema = r.json()
+#         return {prop["name"] for prop in schema.get("properties", [])}
+
+#     allowed_props = get_allowed_properties(object_type_id, hubspot_headers)
+#     print("Allowed HubSpot fields:", allowed_props)
+#     for record in transformed_data:
+#         # Map and normalize fuel type
+#         fuel_type_raw = record.get("fuelType")
+#         fuel_type_mapped = None
+#         if isinstance(fuel_type_raw, str):
+#             fuel_type_mapped = next(
+#                 (v for k, v in FUEL_TYPE_MAP.items() if k.lower() == fuel_type_raw.strip().lower()),
+#                 None
+#             )
+
+#         # Normalize and map ELD status
+#         raw_status = record.get("eld_status")
+#         eld_status_mapped = STATUS_MAP.get((raw_status or "").strip().lower(), "Deactivated")
+
+#         # Assemble HubSpot properties
+#         properties = {
+#             k: v for k, v in {
+#                 "unit_id": record.get("unit_id"),
+#                 "driver_eld": record.get("driver__eld_"),
+#                 "location_eld": record.get("location__eld_"),
+#                 "engine_hours": record.get("engine_hours"),
+#                 "mileage": record.get("mileage"),
+#                 "last_sync_logs": record.get("last_sync__logs_"),
+#                 "eld_serial_no": record.get("eld_serial_no_"),
+#                 "eld_status": eld_status_mapped,
+#                 "driver_id": record.get("driver_id"),
+#                 "vin": record.get("vin"),
+#                 "active": record.get("active"),
+#                 **({"fuel_type": fuel_type_mapped} if fuel_type_mapped else {})
+#             }.items() if k in allowed_props and v is not None
+#         }
+
+#         payload = {"properties": properties}
+
+#         print("\n📦 Sending payload to HubSpot:")
+#         # print(json.dumps(payload, indent=2))  # Uncomment for full debug
+
+#         # Try update first
+#         query_url = f"https://api.hubapi.com/crm/v3/objects/{object_type_id}/search"
+#         query_payload = {
+#             "filterGroups": [{
+#                 "filters": [{
+#                     "propertyName": "unit_id",
+#                     "operator": "EQ",
+#                     "value": record.get("unit_id")
+#                 }]
+#             }],
+#             "properties": list(allowed_props),
+#             "limit": 1
+#         }
+
+#         search_response = requests.post(query_url, headers=hubspot_headers, json=query_payload)
+#         if search_response.status_code == 200:
+#             results = search_response.json().get("results", [])
+#             if results:
+#                 existing_id = results[0]["id"]
+#                 update_url = f"https://api.hubapi.com/crm/v3/objects/{object_type_id}/{existing_id}"
+#                 update_response = requests.patch(update_url, headers=hubspot_headers, json=payload)
+#                 print(f"🔄 Updated record {record['unit_id']}, status: {update_response.status_code}")
+#                 print(update_response.text)
+#                 continue
+
+#         # If not found, create new
+#         create_url = f"https://api.hubapi.com/crm/v3/objects/{object_type_id}"
+#         create_response = requests.post(create_url, headers=hubspot_headers, json=payload)
+#         if create_response.status_code == 201:
+#             print(f"✅ Created new record: {record['unit_id']}")
+#         else:
+#             print(f"❌ Failed to create record: {record['unit_id']}")
+#             print(create_response.text)
+
 def push_to_hubspot(object_type_id, transformed_data):
+    import json
+
     def get_allowed_properties(object_type_id, headers):
         url = f"https://api.hubapi.com/crm/v3/schemas/{object_type_id}"
         r = requests.get(url, headers=headers)
@@ -223,9 +306,16 @@ def push_to_hubspot(object_type_id, transformed_data):
         return {prop["name"] for prop in schema.get("properties", [])}
 
     allowed_props = get_allowed_properties(object_type_id, hubspot_headers)
+    print("Allowed HubSpot fields:", allowed_props)
+
+    all_payloads = []
 
     for record in transformed_data:
-        # Map and normalize fuel type
+        # Normalize ELD status
+        raw_status = record.get("eld_status")
+        eld_status_mapped = STATUS_MAP.get((raw_status or "").strip().lower(), "Deactivated")
+
+        # Normalize fuel type
         fuel_type_raw = record.get("fuelType")
         fuel_type_mapped = None
         if isinstance(fuel_type_raw, str):
@@ -234,20 +324,16 @@ def push_to_hubspot(object_type_id, transformed_data):
                 None
             )
 
-        # Normalize and map ELD status
-        raw_status = record.get("eld_status")
-        eld_status_mapped = STATUS_MAP.get((raw_status or "").strip().lower(), "Deactivated")
-
         # Assemble HubSpot properties
         properties = {
             k: v for k, v in {
                 "unit_id": record.get("unit_id"),
-                "driver_eld": record.get("driver__eld_"),
-                "location_eld": record.get("location__eld_"),
+                "driver__eld_": record.get("driver__eld_"),
+                "location__eld_": record.get("location__eld_"),
                 "engine_hours": record.get("engine_hours"),
                 "mileage": record.get("mileage"),
-                "last_sync_logs": record.get("last_sync__logs_"),
-                "eld_serial_no": record.get("eld_serial_no_"),
+                "last_sync__logs_": record.get("last_sync__logs_"),
+                "eld_serial_no_": record.get("eld_serial_no_"),
                 "eld_status": eld_status_mapped,
                 "driver_id": record.get("driver_id"),
                 "vin": record.get("vin"),
@@ -257,11 +343,12 @@ def push_to_hubspot(object_type_id, transformed_data):
         }
 
         payload = {"properties": properties}
+        all_payloads.append(payload)
 
-        print("\n📦 Sending payload to HubSpot:")
-        # print(json.dumps(payload, indent=2))  # Uncomment for full debug
+        # print(f"\n📦 [PREVIEW] Would send to HubSpot for unit_id: {record['unit_id']}")
+        # print(json.dumps(payload, indent=2))
 
-        # Try update first
+        
         query_url = f"https://api.hubapi.com/crm/v3/objects/{object_type_id}/search"
         query_payload = {
             "filterGroups": [{
@@ -274,7 +361,6 @@ def push_to_hubspot(object_type_id, transformed_data):
             "properties": list(allowed_props),
             "limit": 1
         }
-
         search_response = requests.post(query_url, headers=hubspot_headers, json=query_payload)
         if search_response.status_code == 200:
             results = search_response.json().get("results", [])
@@ -285,8 +371,7 @@ def push_to_hubspot(object_type_id, transformed_data):
                 print(f"🔄 Updated record {record['unit_id']}, status: {update_response.status_code}")
                 print(update_response.text)
                 continue
-
-        # If not found, create new
+        
         create_url = f"https://api.hubapi.com/crm/v3/objects/{object_type_id}"
         create_response = requests.post(create_url, headers=hubspot_headers, json=payload)
         if create_response.status_code == 201:
@@ -295,7 +380,10 @@ def push_to_hubspot(object_type_id, transformed_data):
             print(f"❌ Failed to create record: {record['unit_id']}")
             print(create_response.text)
 
-
+    # # Optional: Write all payloads to a local file for manual review
+    # with open("hubspot_payload_preview.json", "w", encoding="utf-8") as f:
+    #     json.dump(all_payloads, f, indent=2)
+    #     print("\n📝 All payloads written to hubspot_payload_preview.json")
 
 # main
 # add
