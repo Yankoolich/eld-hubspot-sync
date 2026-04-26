@@ -379,7 +379,7 @@ def push_to_hubspot(object_type_id, transformed_data):
         else:
             print(f"❌ Failed to create record: {record['unit_id']}")
             print(create_response.text)
-            print("updAt")
+            print("updAte")
 
     # # Optional: Write all payloads to a local file for manual review
     # with open("hubspot_payload_preview.json", "w", encoding="utf-8") as f:
